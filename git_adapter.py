@@ -233,10 +233,15 @@ class GitAdapter:
                 raise GitAdapterError("GIT_MALFORMED_OUTPUT")
             if not re.fullmatch(r"[0-9a-fA-F]{40}", fields[0]) or not re.fullmatch(r"[0-9a-fA-F]{7,40}", fields[1]) or not fields[0].lower().startswith(fields[1].lower()) or not fields[2] or not fields[3] or not fields[4]:
                 raise GitAdapterError("GIT_MALFORMED_OUTPUT")
-            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}", fields[4]):
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)", fields[4]):
                 raise GitAdapterError("GIT_MALFORMED_OUTPUT")
             try:
-                datetime.fromisoformat(fields[4])
+                # git's `--date=iso-strict` renders UTC commit timestamps with a
+                # trailing "Z" (strict ISO 8601) instead of "+00:00" — this
+                # happens for any author whose local git config resolves to UTC
+                # (e.g. dependabot[bot]). `datetime.fromisoformat` pre-3.11 does
+                # not accept the "Z" suffix, so normalize it before parsing.
+                datetime.fromisoformat(fields[4].replace("Z", "+00:00"))
             except ValueError as exc:
                 raise GitAdapterError("GIT_MALFORMED_OUTPUT") from exc
             parents = fields[5].split()
@@ -255,10 +260,12 @@ class GitAdapter:
         header = lines[0].split("\0") if lines else []
         if len(header) != 4 or not re.fullmatch(r"[0-9a-fA-F]{40}", header[0]) or not re.fullmatch(r"[0-9a-fA-F]{7,40}", commit) or not header[0].lower().startswith(commit.lower()) or not header[1] or not header[2] or not header[3]:
             raise GitAdapterError("GIT_MALFORMED_OUTPUT")
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:\d{2}", header[3]):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)", header[3]):
             raise GitAdapterError("GIT_MALFORMED_OUTPUT")
         try:
-            datetime.fromisoformat(header[3])
+            # See commits(): git renders UTC author dates with a trailing "Z"
+            # for --date=iso-strict (e.g. bot authors like dependabot[bot]).
+            datetime.fromisoformat(header[3].replace("Z", "+00:00"))
         except ValueError as exc:
             raise GitAdapterError("GIT_MALFORMED_OUTPUT") from exc
         files = []

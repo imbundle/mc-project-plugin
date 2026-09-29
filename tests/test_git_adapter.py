@@ -133,6 +133,37 @@ def test_reads_commit_timeline_and_detail(tmp_path: Path) -> None:
     assert "diff --git" in detail["diff"]
 
 
+def test_commit_history_accepts_utc_z_timestamp(tmp_path: Path) -> None:
+    context, _ = make_repo(tmp_path)
+    adapter = GitAdapter(context)
+    commit_hash = "a" * 40
+    raw = "\0".join([
+        commit_hash, commit_hash[:7], "UTC commit", "dependabot[bot]",
+        "2026-09-28T12:34:56Z", "", "",
+    ]) + "\n"
+    adapter._run = lambda operation, _args: raw if operation == "log" else ""  # type: ignore[method-assign]
+
+    commits = adapter.commits("main")
+
+    assert commits[0]["date"] == "2026-09-28T12:34:56Z"
+    assert commits[0]["author"] == "dependabot[bot]"
+
+
+def test_commit_detail_accepts_utc_z_timestamp(tmp_path: Path) -> None:
+    context, _ = make_repo(tmp_path)
+    adapter = GitAdapter(context)
+    commit_hash = "a" * 40
+    raw = chr(0).join([
+        commit_hash, "UTC commit", "dependabot[bot]", "2026-09-28T12:34:56Z",
+    ]) + "\n\n1\t0\tREADME.md\n"
+    adapter._run = lambda operation, _args: raw if operation == "show" else "diff --git a/README.md b/README.md\n"  # type: ignore[method-assign]
+
+    detail = adapter.commit_detail(commit_hash)
+
+    assert detail["hash"] == commit_hash
+    assert detail["author"] == "dependabot[bot]"
+
+
 def test_reads_file_diff_without_mutating_repository(tmp_path: Path) -> None:
     context, repo = make_repo(tmp_path)
     before = subprocess.check_output(["git", "-C", repo, "status", "--porcelain"], text=True)
