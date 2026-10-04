@@ -5,7 +5,7 @@
 - Project ID: `mc-project-plugin`
 - Kind: `proprietary`
 - Scope: `combined`
-- Primary repository: `${MC_PROJECT_ROOT}`
+- Primary repository: `/home/cyclone/Developer/projects/mc-project-plugin`
 - Source of truth: this repository, current Mission Control plugin contract, and approved plan
 
 ## Skill Entry Point
@@ -24,8 +24,9 @@
 - Use the configured project registry; never accept arbitrary paths or commands from the browser.
 - Separate read-only Git/GitHub operations from branch mutations.
 - Mutations require strict validation, bounded execution, per-project locking, and read-back verification.
+- Write GitHub issues and pull requests, commit messages, and source-code comments in English.
 - Preserve the accepted UI baseline (design target congelato `mockup-projects-v4.html`, 17/09/2026): Files tree compatta, Local/Remote branch tabs senza pill dura, breadcrumb (`DIFF/HISTORY/COMMIT`) come header della colonna centrale con Last updated + Refresh a destra, sidebar accordion flat, Issues e Pull requests come accordion separati nella sidebar (non più footer nella colonna centrale), colonna centrale flat senza card arrotondate.
-- Workspace mode `Git | Code` (issue #26/#28): il selettore modalità vive nella colonna 2 dell'header, sopra la griglia. `Git` = baseline congelata v4, invariata. `Code` = modalità separata: sidebar con albero lazy dell'intero repository (`/tree`) e colonna centrale con editor read-only CodeMirror (`/file`, cap 256KB, syntax highlighting per lingua, righe numerate, nessun editing), preview Markdown affiancata per `.md` e viewer binari per immagini/PDF via `file/raw`; nessun edit/ricerca/simboli nel MVP. Lo stato `mode` è globale nel route controller e al cambio progetto si resetta a `git` con stato Code scartato. La modalità Code è una superficie nuova, non una variante della baseline v4 (AGENTS.md aggiornato in commit dedicato, 18/09/2026).
+- Workspace mode `Git | Code` (issue #26/#28): il selettore modalità vive nella colonna 2 dell'header, sopra la griglia. `Git` = baseline congelata v4, invariata. `Code` = modalità separata: sidebar con albero lazy dell'intero repository (`/tree`) e colonna centrale con editor read-only CodeMirror (`/file`, cap 256KB, syntax highlighting per lingua, righe numerate, nessun editing), rendering diretto del Markdown per `.md`/`.markdown` (senza CodeMirror o toggle Preview) e viewer binari per immagini/PDF via `file/raw`; nessun edit/ricerca/simboli nel MVP. Lo stato `mode` è globale nel route controller e al cambio progetto si resetta a `git` con stato Code scartato. La modalità Code è una superficie nuova, non una variante della baseline v4 (AGENTS.md aggiornato in commit dedicato, 18/09/2026).
 
 ## Verification
 
