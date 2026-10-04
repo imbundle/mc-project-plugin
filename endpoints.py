@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Callable
 from datetime import datetime, timezone
 import re
@@ -21,6 +22,7 @@ from service import ProjectService
 
 _MISSING = object()
 _PROJECT_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_PLANS_FILE_SUFFIXES = frozenset({".md", ".markdown"})
 _COMMIT = re.compile(r"^[0-9a-fA-F]{40}$")
 _MAX_PR = 1_000_000
 _RUNTIME_LOCK = threading.RLock()
@@ -271,6 +273,94 @@ def listTree(body: dict[str, Any], params: Mapping[str, list[str]], auth: object
         except file_explorer.NotAllowedError as exc:
             raise ServiceError("NOT_ALLOWED", 403) from exc
         return _ok({"path": rel or ".", "entries": entries, "truncated": truncated})
+
+    return _run(operation)
+
+
+def _plans_record(registry: Registry, project_id: str) -> ProjectRecord:
+    record = registry.get(project_id)
+    if record is None or not record.enabled:
+        raise ServiceError("UNKNOWN_PROJECT", 404)
+    return record
+
+
+def _plans_root(record: ProjectRecord) -> Path:
+    slug = record.plans_slug or record.project_id
+    plans_root = (Path.home() / "Developer" / "plans").resolve(strict=False)
+    mapped_root = plans_root / record.plans_category / slug
+    try:
+        resolved_root = mapped_root.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ServiceError("NOT_ALLOWED", 403) from exc
+    if resolved_root != mapped_root:
+        raise ServiceError("NOT_ALLOWED", 403)
+    return mapped_root
+
+
+def _validate_plans_path(rel: str) -> None:
+    if not file_explorer.valid_relative_path(rel):
+        raise ServiceError("INVALID_REQUEST", 400)
+    parts = [] if rel in ("", ".") else rel.split("/")
+    if any(part.startswith(".") for part in parts):
+        raise ServiceError("NOT_ALLOWED", 403)
+
+
+def listPlansTree(body: dict[str, Any], params: Mapping[str, list[str]], auth: object = _MISSING) -> dict[str, object]:
+    _auth(auth)
+    _get_body(body)
+    values = _params(params, {"project_id", "path"})
+    project_id = _one(values, "project_id")
+    rel = _one(values, "path", required=False) or ""
+    if not project_id or not _PROJECT_ID.fullmatch(project_id):
+        raise ServiceError("INVALID_REQUEST", 400)
+    _validate_plans_path(rel)
+
+    def operation() -> dict[str, object]:
+        registry, _ = _runtime()
+        record = _plans_record(registry, project_id)
+        try:
+            entries, truncated = file_explorer.list_tree(_plans_root(record), rel)
+        except file_explorer.NotAllowedError as exc:
+            raise ServiceError("NOT_ALLOWED", 403) from exc
+        except FileNotFoundError as exc:
+            raise ServiceError("NOT_FOUND", 404) from exc
+        visible_entries = [
+            entry for entry in entries
+            if not str(entry["name"]).startswith(".")
+            and (entry["type"] == "dir" or Path(str(entry["name"])).suffix.lower() in _PLANS_FILE_SUFFIXES)
+        ]
+        return _ok({"path": rel or ".", "entries": visible_entries, "truncated": truncated})
+
+    return _run(operation)
+
+
+def readPlanFile(body: dict[str, Any], params: Mapping[str, list[str]], auth: object = _MISSING) -> dict[str, object]:
+    _auth(auth)
+    _get_body(body)
+    values = _params(params, {"project_id", "path"})
+    project_id = _one(values, "project_id")
+    rel = _one(values, "path")
+    assert isinstance(rel, str)
+    if not project_id or not _PROJECT_ID.fullmatch(project_id):
+        raise ServiceError("INVALID_REQUEST", 400)
+    _validate_plans_path(rel)
+    if Path(rel).suffix.lower() not in _PLANS_FILE_SUFFIXES:
+        raise ServiceError("NOT_ALLOWED", 403)
+
+    def operation() -> dict[str, object]:
+        registry, _ = _runtime()
+        record = _plans_record(registry, project_id)
+        try:
+            result = file_explorer.read_file(_plans_root(record), rel)
+        except file_explorer.NotAllowedError as exc:
+            raise ServiceError("NOT_ALLOWED", 403) from exc
+        except FileNotFoundError as exc:
+            raise ServiceError("NOT_FOUND", 404) from exc
+        if result["binary"] is True:
+            raise ServiceError("NOT_ALLOWED", 403)
+        if result["truncated"] is True:
+            raise ServiceError("PAYLOAD_TOO_LARGE", 413)
+        return _ok(result)
 
     return _run(operation)
 

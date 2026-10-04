@@ -23,6 +23,8 @@ const manifest: PluginManifest = {
     { method: 'GET', path: '/mc-project-plugin/projects/tree', handler: 'listTree', authRequired: true },
     { method: 'GET', path: '/mc-project-plugin/projects/file', handler: 'readFile', authRequired: true },
     { method: 'GET', path: '/mc-project-plugin/projects/file/raw', handler: 'readFileRaw', authRequired: true },
+    { method: 'GET', path: '/mc-project-plugin/projects/plans/tree', handler: 'listPlansTree', authRequired: true },
+    { method: 'GET', path: '/mc-project-plugin/projects/plans/file', handler: 'readPlanFile', authRequired: true },
   ],
 }
 

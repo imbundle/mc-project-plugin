@@ -33,6 +33,8 @@ EXPECTED_ENDPOINTS = [
     {"method": "GET", "path": "/mc-project-plugin/projects/tree", "handler": "listTree", "authRequired": True},
     {"method": "GET", "path": "/mc-project-plugin/projects/file", "handler": "readFile", "authRequired": True},
     {"method": "GET", "path": "/mc-project-plugin/projects/file/raw", "handler": "readFileRaw", "authRequired": True},
+    {"method": "GET", "path": "/mc-project-plugin/projects/plans/tree", "handler": "listPlansTree", "authRequired": True},
+    {"method": "GET", "path": "/mc-project-plugin/projects/plans/file", "handler": "readPlanFile", "authRequired": True},
 ]
 
 
@@ -73,7 +75,7 @@ print(json.dumps({
     "plugin_dir": str(loader.get_plugin_dir("mc-project-plugin")),
     "resolved_dir": str(loader.get_plugin_dir("mc-project-plugin").resolve()),
     "manifest": manifest,
-    "handlers": sorted(name for name in ("listProjects", "getSnapshot", "getCommitDetail", "getPullRequestDetail", "switchBranch", "createBranch", "listTree", "readFile", "readFileRaw") if hasattr(module, name)),
+    "handlers": sorted(name for name in ("listProjects", "getSnapshot", "getCommitDetail", "getPullRequestDetail", "switchBranch", "createBranch", "listTree", "readFile", "readFileRaw", "listPlansTree", "readPlanFile") if hasattr(module, name)),
     "responses": responses,
 }))
 """

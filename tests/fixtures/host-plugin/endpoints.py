@@ -35,3 +35,11 @@ def readFile(body, params, auth):
 
 def readFileRaw(body, params, auth):
     return {"ok": True, "handler": "readFileRaw"}
+
+
+def listPlansTree(body, params, auth):
+    return {"ok": True, "handler": "listPlansTree"}
+
+
+def readPlanFile(body, params, auth):
+    return {"ok": True, "handler": "readPlanFile"}
