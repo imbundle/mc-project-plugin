@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { foldGutter, bracketMatching } from '@codemirror/language'
@@ -43,11 +43,6 @@ export function CodeViewer({
   loading: boolean
   error?: ApiError
 }) {
-  const [previewOpen, setPreviewOpen] = useState(false)
-  useEffect(() => {
-    setPreviewOpen(false)
-  }, [path])
-
   const ext = extensionOf(path)
   const isMarkdown = ext === 'md' || ext === 'markdown'
   const isBinaryPreview = isBinaryPreviewable(path)
@@ -81,21 +76,10 @@ export function CodeViewer({
                 File truncated (first 262144 bytes shown).
               </div>
             )}
-            {isMarkdown && (
-              <div className="border-border-subtle flex h-8 shrink-0 items-center gap-2 border-b px-2">
-                <button
-                  data-testid="md-preview-toggle"
-                  type="button"
-                  aria-pressed={previewOpen}
-                  onClick={() => setPreviewOpen((value) => !value)}
-                  className="text-text-muted hover:text-text-subtle px-2 py-0.5 text-xs"
-                >
-                  Preview
-                </button>
-              </div>
-            )}
-            <div className="flex min-h-0 min-w-0 flex-1">
-              <div className="code-viewer-scroll min-w-0 flex-1 overflow-auto">
+            {isMarkdown ? (
+              <MarkdownPreview content={file.content} />
+            ) : (
+              <div className="code-viewer-scroll min-h-0 min-w-0 flex-1 overflow-auto">
                 <CodeMirror
                   value={file.content}
                   readOnly
@@ -106,12 +90,7 @@ export function CodeViewer({
                   style={{ height: '100%' }}
                 />
               </div>
-              {previewOpen && isMarkdown && (
-                <div className="min-w-0 flex-1 border-l border-border-subtle">
-                  <MarkdownPreview content={file.content} />
-                </div>
-              )}
-            </div>
+            )}
           </div>
         ) : (
           <div className="text-text-muted p-4 font-mono text-xs" role="status">

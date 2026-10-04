@@ -218,63 +218,33 @@ test('#35 empty state is preserved without content', async () => {
   }
 })
 
-test('#36 markdown file shows editor plus preview toggle; opening renders the preview', async () => {
-  // NOTA ambiente: la CHIUSURA del toggle (re-layout del contenitore CodeMirror a
-  // larghezza piena) crasha in happy-dom — CodeMirror usa geometry non implementata
-  // (scrollAnchorAt → TextLeaf.lineInner), riprodotto in probe isolato. In browser
-  // reale funziona (il live gate lo verifica). Qui si verifica l'apertura.
+test('#41 Markdown file renders directly without Preview toggle or CodeMirror', async () => {
   const { host, root } = await renderCodeViewer({
     path: 'README.md',
-    file: { path: 'README.md', size: 6, content: '# A\n', truncated: false, binary: false },
+    file: { path: 'README.md', size: 22, content: '# README\n\nBody text.\n', truncated: false, binary: false },
     loading: false,
   })
   try {
-    const toggle = host.querySelector<HTMLButtonElement>('[data-testid="md-preview-toggle"]')
-    assert.ok(toggle)
-    assert.equal(host.querySelector('[data-testid="md-preview"]'), null)
-    await act(async () => {
-      toggle.click()
-      await wait(50)
-    })
     const preview = host.querySelector('[data-testid="md-preview"]')
-    assert.ok(preview)
-    assert.ok(preview.querySelector('h1'))
+    assert.ok(preview?.querySelector('h1'))
+    assert.equal(host.querySelector('[data-testid="md-preview-toggle"]'), null)
+    assert.equal(host.querySelector('.cm-editor'), null)
   } finally {
     await act(async () => root.unmount())
   }
 })
 
-test('#36 preview is closed at start and stays reset on path change', async () => {
-  // Copre la regola "stato preview non persistito tra file": dopo il cambio path
-  // il toggle resta presente e la preview non viene montata (stato iniziale chiuso).
-  let props: {
-    path: string
-    file: { path: string; size: number; content: string; truncated: boolean; binary: boolean }
-  } = {
-    path: 'README.md',
-    file: { path: 'README.md', size: 6, content: '# A\n', truncated: false, binary: false },
-  }
-  const window = installDom()
-  const host = document.createElement('div')
-  document.body.append(host)
-  const root = createRoot(host)
+test('#41 .markdown extension also renders directly without CodeMirror', async () => {
+  const { host, root } = await renderCodeViewer({
+    path: 'docs/guide.markdown',
+    file: { path: 'docs/guide.markdown', size: 20, content: '## Guide\n\nDetails.\n', truncated: false, binary: false },
+    loading: false,
+  })
   try {
-    const render = (next: typeof props) => {
-      props = next
-      root.render(React.createElement(CodeViewer, { projectId: 'demo', ...props, loading: false }))
-    }
-    await act(async () => {
-      render(props)
-      await wait(600)
-    })
-    assert.ok(host.querySelector('[data-testid="md-preview-toggle"]'))
-    assert.equal(host.querySelector('[data-testid="md-preview"]'), null)
-    await act(async () => {
-      render({ path: 'other.md', file: { path: 'other.md', size: 4, content: '# B\n', truncated: false, binary: false } })
-      await wait(100)
-    })
-    assert.ok(host.querySelector('[data-testid="md-preview-toggle"]'))
-    assert.equal(host.querySelector('[data-testid="md-preview"]'), null)
+    const preview = host.querySelector('[data-testid="md-preview"]')
+    assert.ok(preview?.querySelector('h2'))
+    assert.equal(host.querySelector('[data-testid="md-preview-toggle"]'), null)
+    assert.equal(host.querySelector('.cm-editor'), null)
   } finally {
     await act(async () => root.unmount())
   }

@@ -33,12 +33,38 @@ async function render(content: string) {
   return { window, host, root }
 }
 
-test('#36 MarkdownPreview renders headings, lists and GFM tables', async () => {
-  const { host, root } = await render('# Titolo\n\n- a\n- b\n\n| A | B |\n|---|---|\n| 1 | 2 |\n')
+test('#41 MarkdownPreview renders a readable heading hierarchy and representative GFM content', async () => {
+  const content = [
+    '# Title',
+    '',
+    '## Section',
+    '',
+    'Paragraph with **strong text** and `inline code`.',
+    '',
+    '> Quoted text',
+    '',
+    '```ts',
+    'const answer = 42',
+    '```',
+    '',
+    '- first item',
+    '- second item',
+    '',
+    '| Name | Value |',
+    '|---|---|',
+    '| answer | 42 |',
+  ].join('\n')
+  const { host, root } = await render(content)
   try {
-    assert.ok(host.querySelector('[data-testid="md-preview"] h1'))
-    assert.ok(host.querySelectorAll('[data-testid="md-preview"] li').length >= 2)
-    assert.ok(host.querySelector('[data-testid="md-preview"] table'))
+    const preview = host.querySelector('[data-testid="md-preview"]')
+    assert.equal(preview?.querySelector('h1')?.textContent, 'Title')
+    assert.equal(preview?.querySelector('h2')?.textContent, 'Section')
+    assert.ok(preview?.querySelector('p strong'))
+    assert.ok(preview?.querySelector('p code'))
+    assert.equal(preview?.querySelector('blockquote')?.textContent?.trim(), 'Quoted text')
+    assert.equal(preview?.querySelector('pre code')?.textContent?.trim(), 'const answer = 42')
+    assert.ok(preview?.querySelectorAll('li').length >= 2)
+    assert.ok(preview?.querySelector('table'))
   } finally {
     await act(async () => root.unmount())
   }

@@ -1233,7 +1233,7 @@ test('renders capability notice and retains last-good DOM after a failed refresh
   }
 })
 
-test('#28 code mode renders tree and viewer and resets on mode change', { concurrency: false }, async () => {
+test('#41 code mode renders Markdown directly and resets on mode change', { concurrency: false }, async () => {
   const { host, root } = await mountedRoute()
   try {
     assert.ok(host.querySelector('[data-testid="workspace-mode-tabs"]'))
@@ -1248,10 +1248,10 @@ test('#28 code mode renders tree and viewer and resets on mode change', { concur
     await act(async () => {
       await sleep(600)
     })
-    assert.ok(host.querySelector('[data-testid="code-content"]'))
-    assert.ok(host.querySelector('[data-testid="code-content"] .cm-content'))
-    assert.ok(host.querySelectorAll('[data-testid="code-content"] .cm-line').length > 0)
-    assert.match(text(host), /# repo/)
+    const preview = host.querySelector('[data-testid="md-preview"]')
+    assert.equal(preview?.querySelector('h1')?.textContent, 'repo')
+    assert.equal(host.querySelector('[data-testid="md-preview-toggle"]'), null)
+    assert.equal(host.querySelector('.cm-editor'), null)
     await click(host, '[data-mode="git"]')
     assert.ok(host.querySelector('[data-testid="files-section"]'))
     assert.equal(host.querySelector('[data-testid="code-tree"]'), null)
