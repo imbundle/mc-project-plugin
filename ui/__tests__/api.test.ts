@@ -11,6 +11,8 @@ import {
   validPullRequestDetail,
   validIssue,
   validPullRequest,
+  validPlansFile,
+  validPlansTree,
   validSnapshot,
 } from '../api.ts'
 
@@ -59,6 +61,50 @@ const snapshotFixture = JSON.parse(
     'utf8',
   ),
 ).data
+
+test('Plans validators accept only safe Markdown tree entries and complete bounded Markdown files', () => {
+  const tree = {
+    path: '',
+    entries: [
+      { name: 'subplans', path: 'subplans', type: 'dir' },
+      { name: 'README.md', path: 'README.md', type: 'file' },
+      { name: 'overview.markdown', path: 'overview.markdown', type: 'file' },
+    ],
+    truncated: false,
+  }
+  assert.equal(validPlansTree(tree), true)
+  assert.equal(validPlansTree({ ...tree, path: '.' }), true)
+  assert.equal(validPlansTree({ ...tree, entries: [...tree.entries, { name: '.hidden.md', path: '.hidden.md', type: 'file' }] }), false)
+  assert.equal(validPlansTree({ ...tree, entries: [{ name: 'notes.txt', path: 'notes.txt', type: 'file' }] }), false)
+  assert.equal(validPlansTree({ ...tree, entries: [{ name: 'private', path: '.private', type: 'dir' }] }), false)
+  const markdown = { path: 'README.md', size: 2, content: '# ok', truncated: false, binary: false }
+  assert.equal(validPlansFile(markdown), true)
+  assert.equal(validPlansFile({ ...markdown, path: 'notes.txt' }), false)
+  assert.equal(validPlansFile({ ...markdown, binary: true }), false)
+  assert.equal(validPlansFile({ ...markdown, truncated: true }), false)
+  assert.equal(validPlansFile({ ...markdown, size: 262145 }), false)
+  assert.equal(validPlansFile({ ...markdown, content: 'x'.repeat(262145) }), false)
+})
+
+test('Plans API methods call their dedicated read-only endpoints and validate payloads', async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    const requests: string[] = []
+    globalThis.fetch = async (input) => {
+      const url = String(input)
+      requests.push(url)
+      return ok(url.includes('/plans/tree?')
+        ? { path: '', entries: [{ name: 'README.md', path: 'README.md', type: 'file' }], truncated: false }
+        : { path: 'README.md', size: 2, content: '# ok', truncated: false, binary: false })
+    }
+    assert.equal((await projectsApi.plansTree('demo')).entries[0].name, 'README.md')
+    assert.equal((await projectsApi.plansFile('demo', 'README.md')).content, '# ok')
+    assert.match(requests[0], /\/projects\/plans\/tree\?project_id=demo$/)
+    assert.match(requests[1], /\/projects\/plans\/file\?project_id=demo&path=README.md$/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
 
 test('detail validators reject unknown, malformed, and unbounded payloads', () => {
   assert.equal(validCommitDetail(commitDetail), true)

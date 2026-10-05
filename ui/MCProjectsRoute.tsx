@@ -10,6 +10,8 @@ import { StatusStates } from './components/StatusStates'
 import { WorkspaceModeTabs } from './components/WorkspaceModeTabs'
 import { CodeTree } from './components/CodeTree'
 import { CodeViewer } from './components/CodeViewer'
+import { PlansTree } from './components/PlansTree'
+import { PlansViewer } from './components/PlansViewer'
 
 function CapabilityNotice({ name, capability }: { name: string; capability?: Snapshot['capabilities'][string] }) {
   if (!capability || capability.status === 'ready' || capability.status === 'empty') return null
@@ -53,6 +55,10 @@ export default function MCProjectsRoute() {
     codeFile,
     codeLoading,
     codeError,
+    planPath,
+    planFile,
+    planLoading,
+    planError,
   } = route
   const active = catalog.find((project) => project.project_id === activeId)
   const selectProject = controller.selectProject
@@ -127,6 +133,23 @@ export default function MCProjectsRoute() {
             </aside>
             <div id="mc-project-context-column" className="min-h-0 min-w-0 overflow-hidden md:h-full">
               <CodeViewer projectId={active.project_id} path={codePath} file={codeFile} loading={codeLoading} error={codeError} />
+            </div>
+          </>
+        ) : mode === 'plans' ? (
+          <>
+            <aside
+              id="mc-project-sidebar"
+              className="min-w-0 space-y-2 border-b p-2 md:min-h-0 md:overflow-y-auto md:border-b-0"
+            >
+              <PlansTree
+                key={active.project_id}
+                projectId={active.project_id}
+                selectedPath={planPath}
+                onSelectFile={(path) => void controller.openPlanFile(path)}
+              />
+            </aside>
+            <div id="mc-project-context-column" className="min-h-0 min-w-0 overflow-hidden md:h-full">
+              <PlansViewer path={planPath} file={planFile} loading={planLoading} error={planError} />
             </div>
           </>
         ) : (

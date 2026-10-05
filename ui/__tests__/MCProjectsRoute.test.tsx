@@ -336,6 +336,8 @@ const routeApi = (snapshots, overrides = {}) => ({
   createBranch: async () => ({ verified: true, generation: 2 }),
   tree: async () => ({ path: '', entries: [], truncated: false }),
   readFile: async () => ({ path: 'x', size: 1, content: 'x', truncated: false, binary: false }),
+  plansTree: async () => ({ path: '', entries: [], truncated: false }),
+  plansFile: async () => ({ path: 'README.md', size: 1, content: '# plan', truncated: false, binary: false }),
   ...overrides,
 })
 
@@ -567,6 +569,61 @@ test('#28 openCodeFile is a no-op without an active project or outside code mode
   controller.setMode('code')
   await controller.openCodeFile('src/app.ts')
   assert.equal(calls, 1)
+})
+
+test('Plans selection loads a read-only Markdown file and mode/project changes clear it', async () => {
+  const original = snapshot()
+  const controller = createRouteController(
+    routeApi({ demo: original, other: { ...original, project_id: 'other' } }),
+  )
+  await controller.mount()
+  controller.setMode('plans')
+  await controller.openPlanFile('plans/README.md')
+  assert.equal(controller.getState().mode, 'plans')
+  assert.equal(controller.getState().planPath, 'plans/README.md')
+  assert.equal(controller.getState().planFile?.content, '# plan')
+  controller.setMode('code')
+  assert.equal(controller.getState().planPath, undefined)
+  assert.equal(controller.getState().planFile, undefined)
+  controller.setMode('plans')
+  await controller.openPlanFile('plans/README.md')
+  await controller.selectProject('other')
+  assert.equal(controller.getState().mode, 'git')
+  assert.equal(controller.getState().planPath, undefined)
+  assert.equal(controller.getState().planFile, undefined)
+})
+
+test('a Plans file response from the previous project cannot overwrite the newly selected project', async () => {
+  const pending = deferred()
+  const first = snapshot()
+  const second = { ...first, project_id: 'other', snapshotId: 'other-snapshot' }
+  const controller = createRouteController(
+    routeApi({ demo: first, other: second }, { plansFile: async () => pending.promise }),
+  )
+  await controller.mount()
+  controller.setMode('plans')
+  const inflight = controller.openPlanFile('README.md')
+  await controller.selectProject('other')
+  pending.resolve({ path: 'README.md', size: 4, content: 'stale', truncated: false, binary: false })
+  await inflight
+  assert.equal(controller.getState().activeId, 'other')
+  assert.equal(controller.getState().mode, 'git')
+  assert.equal(controller.getState().planFile, undefined)
+})
+
+test('a stale Plans file response cannot repopulate state after leaving Plans mode', async () => {
+  const pending = deferred()
+  const controller = createRouteController(
+    routeApi({ demo: snapshot() }, { plansFile: async () => pending.promise }),
+  )
+  await controller.mount()
+  controller.setMode('plans')
+  const inflight = controller.openPlanFile('README.md')
+  controller.setMode('git')
+  pending.resolve({ path: 'README.md', size: 4, content: 'stale', truncated: false, binary: false })
+  await inflight
+  assert.equal(controller.getState().mode, 'git')
+  assert.equal(controller.getState().planFile, undefined)
 })
 
 test('#28 a stale readFile response cannot repopulate code state after switching to git', async () => {

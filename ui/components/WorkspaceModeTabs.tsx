@@ -1,10 +1,11 @@
 import React from 'react'
 
-export type WorkspaceMode = 'git' | 'code'
+export type WorkspaceMode = 'git' | 'code' | 'plans'
 
 const ITEMS: { value: WorkspaceMode; label: string }[] = [
   { value: 'git', label: 'Git' },
   { value: 'code', label: 'Code' },
+  { value: 'plans', label: 'Plans' },
 ]
 
 export function WorkspaceModeTabs({

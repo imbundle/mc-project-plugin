@@ -61,11 +61,18 @@ function response(data: unknown) {
   )
 }
 
-async function mountedRoute(snapshot = fixture.data, allowReadBack = false, otherSnapshot?: unknown) {
+async function mountedRoute(
+  snapshot = fixture.data,
+  allowReadBack = false,
+  otherSnapshot?: unknown,
+  plansRoot: 'ready' | 'empty' | 'unlinked' | 'error' = 'ready',
+) {
   const window = installDom()
   let snapshotReads = 0
+  const requestLog: string[] = []
   window.fetch = async (input) => {
     const url = String(input)
+    requestLog.push(url)
     if (url.endsWith('/catalog'))
       return response([
         {
@@ -102,6 +109,21 @@ async function mountedRoute(snapshot = fixture.data, allowReadBack = false, othe
         ],
         diff: 'diff --git a/src/app.ts b/src/app.ts\nindex 1111111..2222222 100644\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,2 +1,3 @@\n const value = 1;\n-const oldValue = true;\n+const newValue = true;\n+const extra = true;\n',
       })
+    if (url.includes('/plans/tree?')) {
+      if (url.includes('path=subplans')) return new Response(JSON.stringify({ error: 'NOT_ALLOWED' }), { status: 403 })
+      if (plansRoot === 'unlinked') return new Response(JSON.stringify({ error: 'NOT_FOUND' }), { status: 404 })
+      if (plansRoot === 'error') return new Response(JSON.stringify({ error: 'SERVICE_UNAVAILABLE' }), { status: 502 })
+      return response({
+        path: '',
+        entries: plansRoot === 'empty' ? [] : [
+          { name: 'subplans', path: 'subplans', type: 'dir' },
+          { name: 'README.md', path: 'README.md', type: 'file' },
+        ],
+        truncated: false,
+      })
+    }
+    if (url.includes('/plans/file?'))
+      return response({ path: 'README.md', size: 53, content: '# Plans E2E\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n<b>raw</b>', truncated: false, binary: false })
     if (url.includes('/tree?'))
       return response({
         path: 'ui',
@@ -148,7 +170,18 @@ async function mountedRoute(snapshot = fixture.data, allowReadBack = false, othe
     root.render(React.createElement(MCProjectsRoute))
     await sleep(100)
   })
-  return { host, root, window }
+  return { host, root, window, requestLog }
+}
+
+async function press(host: HTMLElement, selector: string, key: string) {
+  const element = host.querySelector<HTMLElement>(selector)
+  assert.ok(element, `missing ${selector}`)
+  const window = element.ownerDocument.defaultView
+  assert.ok(window)
+  await act(async () => {
+    element.dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true, key }))
+    await sleep()
+  })
 }
 
 async function click(host: HTMLElement, selector: string) {
@@ -1230,6 +1263,71 @@ test('renders capability notice and retains last-good DOM after a failed refresh
     assert.match(text(host), /src\/app\.ts/)
   } finally {
     await act(async () => root.unmount())
+  }
+})
+
+test('#45 the Plans mode tab is reachable by keyboard arrow navigation', { concurrency: false }, async () => {
+  const route = await mountedRoute()
+  try {
+    await press(route.host, '[role="tab"][data-mode="git"]', 'ArrowRight')
+    assert.equal(route.host.querySelector('[role="tab"][data-mode="code"]')?.getAttribute('aria-selected'), 'true')
+    await press(route.host, '[role="tab"][data-mode="code"]', 'ArrowRight')
+    assert.equal(route.host.querySelector('[role="tab"][data-mode="plans"]')?.getAttribute('aria-selected'), 'true')
+    assert.ok(route.host.querySelector('[data-testid="plans-tree"]'))
+  } finally {
+    await act(async () => route.root.unmount())
+    route.window.happyDOM.abort()
+  }
+})
+
+test('#45 Plans mode loads and renders Markdown safely; folder states remain distinct', { concurrency: false }, async () => {
+  const ready = await mountedRoute()
+  try {
+    await click(ready.host, '[role="tab"][data-mode="plans"]')
+    assert.equal(ready.host.querySelector('[data-testid="plans-tree"]') !== null, true)
+    assert.equal(ready.host.querySelector('[data-testid="plans-viewer"]') !== null, true)
+    assert.equal(ready.host.querySelector('[data-testid="plans-state"]'), null)
+    assert.equal(ready.host.querySelector('[data-testid="plans-viewer-state"]')?.getAttribute('data-state'), 'no-selection')
+    assert.equal(ready.requestLog.filter((url) => url.includes('/plans/tree?project_id=demo')).length, 1)
+    await click(ready.host, '[data-tree-path="README.md"]')
+    assert.equal(ready.host.querySelector('[data-testid="plans-content"]')?.getAttribute('data-path'), 'README.md')
+    assert.equal(ready.host.querySelector('[data-testid="plans-content"] h1')?.textContent, 'Plans E2E')
+    assert.equal(ready.host.querySelector('[data-testid="plans-content"] table') !== null, true)
+    assert.equal(ready.host.querySelector('[data-testid="plans-content"] b'), null)
+    assert.equal(ready.host.querySelector('.cm-editor'), null)
+    assert.equal(ready.host.querySelector('[data-testid="md-preview-toggle"]'), null)
+    assert.equal(ready.requestLog.filter((url) => url.includes('/plans/tree?project_id=demo')).length, 1)
+  } finally {
+    await act(async () => ready.root.unmount())
+    ready.window.happyDOM.abort()
+  }
+
+  for (const [folderState, expected] of [
+    ['empty', 'empty'],
+    ['unlinked', 'unlinked'],
+    ['error', 'error'],
+  ] as const) {
+    const route = await mountedRoute(fixture.data, false, undefined, folderState)
+    try {
+      await click(route.host, '[role="tab"][data-mode="plans"]')
+      assert.equal(route.host.querySelectorAll('[data-testid="plans-state"]').length, 1)
+      assert.equal(route.host.querySelector('[data-testid="plans-state"]')?.getAttribute('data-state'), expected)
+      assert.equal(route.host.querySelector('[data-testid="code-tree"]'), null)
+    } finally {
+      await act(async () => route.root.unmount())
+      route.window.happyDOM.abort()
+    }
+  }
+
+  const nested = await mountedRoute()
+  try {
+    await click(nested.host, '[role="tab"][data-mode="plans"]')
+    await click(nested.host, '[data-tree-path="subplans"]')
+    assert.ok(nested.requestLog.some((url) => url.includes('path=subplans')))
+    assert.equal(nested.host.querySelectorAll('[data-testid="plans-state"]').length, 0)
+  } finally {
+    await act(async () => nested.root.unmount())
+    nested.window.happyDOM.abort()
   }
 })
 
