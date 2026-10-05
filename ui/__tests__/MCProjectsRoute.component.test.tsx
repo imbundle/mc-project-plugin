@@ -275,6 +275,31 @@ test(
 )
 
 test(
+  'shows an explicit empty-file state for an untracked zero-byte file',
+  { concurrency: false },
+  async () => {
+    installDom()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const snapshot = structuredClone(fixture.data)
+    snapshot.fileDiffs['empty.txt'] =
+      'diff --git a/empty.txt b/empty.txt\nnew file mode 100644\nindex 0000000..e69de29\n'
+    const root = createRoot(host)
+    await act(async () => {
+      root.render(React.createElement(ContextPanel, { focus: { kind: 'file', value: 'empty.txt' }, snapshot }))
+      await sleep()
+    })
+    try {
+      assert.match(text(host.querySelector('[data-testid="context-diff"]') ?? host), /empty file/i)
+      assert.equal(host.querySelector('[data-testid="context-file-unavailable"]'), null)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)
+
+
+test(
   'shows an explicit status when the selected file has no available diff preview',
   { concurrency: false },
   async () => {

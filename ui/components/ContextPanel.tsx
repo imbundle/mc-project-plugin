@@ -67,6 +67,7 @@ function isHunkless(file: ReturnType<typeof parseDiff>[number]): boolean {
 function noHunkLabel(block: DiffBlock): string {
   const { file, raw } = block
   if (/Binary files/.test(raw)) return 'binary file'
+  if (/new file mode/.test(raw)) return 'empty file'
   if (/old mode|new mode/.test(raw)) return 'mode change'
   if (file.oldMode !== file.newMode) return 'mode change'
   return 'no diff content'

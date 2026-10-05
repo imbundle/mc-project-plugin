@@ -72,6 +72,7 @@ def test_real_repository_snapshot_contains_untracked_file_diff(tmp_path: Path) -
     git("commit", "-m", "initial")
     git("remote", "add", "origin", "https://github.com/example/repo.git")
     (repo / "new.txt").write_text("untracked snapshot content\n", encoding="utf-8")
+    (repo / "empty.txt").write_bytes(b"")
 
     repo_context = RepositoryContext("demo", "Demo", repo, "origin", "main", "https://github.com/example/repo.git")
     record = ProjectRecord("demo", "Demo", repo, True, "origin", "main")
@@ -81,6 +82,9 @@ def test_real_repository_snapshot_contains_untracked_file_diff(tmp_path: Path) -
 
     assert {"path": "new.txt", "status": "??"} in snapshot["workingTree"]["files"]
     assert "+untracked snapshot content" in snapshot["fileDiffs"]["new.txt"]
+    assert {"path": "empty.txt", "status": "??"} in snapshot["workingTree"]["files"]
+    assert "new file mode 100644" in snapshot["fileDiffs"]["empty.txt"]
+    assert "@@" not in snapshot["fileDiffs"]["empty.txt"]
 
 
 
