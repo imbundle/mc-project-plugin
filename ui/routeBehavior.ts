@@ -68,6 +68,8 @@ type RouteApi = {
   createBranch: (projectId: string, name: string) => Promise<unknown>
   tree: (projectId: string, path?: string) => Promise<TreeResponse>
   readFile: (projectId: string, path: string) => Promise<FileResponse>
+  plansTree: (projectId: string, path?: string) => Promise<TreeResponse>
+  plansFile: (projectId: string, path: string) => Promise<FileResponse>
 }
 
 export type RouteState = {
@@ -84,11 +86,15 @@ export type RouteState = {
   mutationMessage: string
   mutationBusy: boolean
   selectedCommitHash?: string
-  mode: 'git' | 'code'
+  mode: 'git' | 'code' | 'plans'
   codePath?: string
   codeFile?: FileResponse
   codeLoading: boolean
   codeError?: ApiError
+  planPath?: string
+  planFile?: FileResponse
+  planLoading: boolean
+  planError?: ApiError
 }
 
 const initialState: RouteState = {
@@ -102,6 +108,7 @@ const initialState: RouteState = {
   mutationBusy: false,
   mode: 'git',
   codeLoading: false,
+  planLoading: false,
 }
 const asError = (cause: unknown) => (cause instanceof ApiError ? cause : new ApiError('NETWORK'))
 const INDETERMINATE_MUTATION_CODES = new Set(['MUTATION_INDETERMINATE', 'INDETERMINATE', 'READBACK_MISMATCH'])
@@ -176,6 +183,10 @@ export function createRouteController(api: RouteApi) {
       codeFile: undefined,
       codeLoading: false,
       codeError: undefined,
+      planPath: undefined,
+      planFile: undefined,
+      planLoading: false,
+      planError: undefined,
     })
     return loadSnapshot(id, requestToken)
   }
@@ -255,11 +266,18 @@ export function createRouteController(api: RouteApi) {
       if (mounted && requestToken === token) update({ detailLoading: false })
     }
   }
-  const setMode = (mode: 'git' | 'code') => {
+  const setMode = (mode: 'git' | 'code' | 'plans') => {
     ++token
     update({
       mode,
-      ...(mode === 'git' ? { codePath: undefined, codeFile: undefined, codeLoading: false, codeError: undefined } : {}),
+      codePath: undefined,
+      codeFile: undefined,
+      codeLoading: false,
+      codeError: undefined,
+      planPath: undefined,
+      planFile: undefined,
+      planLoading: false,
+      planError: undefined,
     })
   }
   const openCodeFile = async (path: string) => {
@@ -276,6 +294,22 @@ export function createRouteController(api: RouteApi) {
         update({ codeError: asError(cause), codeLoading: false })
     } finally {
       if (mounted && requestToken === token && state.mode === 'code') update({ codeLoading: false })
+    }
+  }
+  const openPlanFile = async (path: string) => {
+    const currentId = state.activeId
+    if (!currentId || state.mode !== 'plans') return
+    const requestToken = ++token
+    update({ planPath: path, planFile: undefined, planLoading: true, planError: undefined })
+    try {
+      const file = await api.plansFile(currentId, path)
+      if (mounted && requestToken === token && state.activeId === currentId && state.mode === 'plans')
+        update({ planFile: file, planLoading: false })
+    } catch (cause) {
+      if (mounted && requestToken === token && state.activeId === currentId && state.mode === 'plans')
+        update({ planError: asError(cause), planLoading: false })
+    } finally {
+      if (mounted && requestToken === token && state.mode === 'plans') update({ planLoading: false })
     }
   }
   const mutate = async (kind: 'switch' | 'create', value: string) => {
@@ -373,6 +407,7 @@ export function createRouteController(api: RouteApi) {
     selectPullRequest,
     setMode,
     openCodeFile,
+    openPlanFile,
     mutate,
     toggleSelector: () => update({ selectorOpen: !state.selectorOpen }),
   }

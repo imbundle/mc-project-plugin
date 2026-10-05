@@ -824,6 +824,36 @@ export const validTree = (value: unknown): value is TreeResponse =>
   boundedArray(value.entries, MAX_FILES, treeEntry) &&
   typeof value.truncated === 'boolean'
 
+const plansPath = (value: unknown, allowEmpty = false): value is string =>
+  typeof value === 'string' &&
+  value.length <= 1024 &&
+  (value === '' ? allowEmpty : value.split('/').length <= 32 && relativePath(value) &&
+    value.split('/').every((segment) => segment.length > 0 && !segment.startsWith('.') && !segment.includes('\\') && !/[\x00-\x1f]/.test(segment)))
+const markdownPath = (value: unknown): value is string =>
+  plansPath(value) && /\.(?:md|markdown)$/i.test(value)
+
+export const validPlansTree = (value: unknown): value is TreeResponse =>
+  hasRequiredKeys(value, ['path', 'entries', 'truncated'], ['path', 'entries', 'truncated']) &&
+  plansPath(value.path, true) &&
+  boundedArray(value.entries, MAX_FILES, (entry): entry is TreeEntry =>
+    treeEntry(entry) &&
+    !entry.name.startsWith('.') &&
+    plansPath(entry.path) &&
+    (entry.type === 'dir' || markdownPath(entry.path)) &&
+    entry.path.split('/').at(-1) === entry.name,
+  ) &&
+  typeof value.truncated === 'boolean'
+
+export const validPlansFile = (value: unknown): value is FileResponse =>
+  hasRequiredKeys(value, ['path', 'size', 'content', 'truncated', 'binary'], ['path', 'size', 'content', 'truncated', 'binary']) &&
+  markdownPath(value.path) &&
+  nonNegativeInteger(value.size) &&
+  value.size <= MAX_FILE_BYTES &&
+  typeof value.content === 'string' &&
+  utf8Length(value.content) <= MAX_FILE_BYTES &&
+  value.truncated === false &&
+  value.binary === false
+
 export const validFileContent = (value: unknown): value is FileResponse =>
   hasRequiredKeys(value, ['path', 'size', 'truncated', 'binary'], ['path', 'size', 'content', 'truncated', 'binary']) &&
   string(value.path, 1024) &&
@@ -936,6 +966,17 @@ export const projectsApi = {
   async readFile(projectId: string, path: string): Promise<FileResponse> {
     const data = await request<unknown>(`/file?project_id=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`)
     if (!validFileContent(data)) throw new ApiError('INVALID_RESPONSE')
+    return data
+  },
+  async plansTree(projectId: string, path = ''): Promise<TreeResponse> {
+    const suffix = path ? `&path=${encodeURIComponent(path)}` : ''
+    const data = await request<unknown>(`/plans/tree?project_id=${encodeURIComponent(projectId)}${suffix}`)
+    if (!validPlansTree(data)) throw new ApiError('INVALID_RESPONSE')
+    return data
+  },
+  async plansFile(projectId: string, path: string): Promise<FileResponse> {
+    const data = await request<unknown>(`/plans/file?project_id=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`)
+    if (!validPlansFile(data)) throw new ApiError('INVALID_RESPONSE')
     return data
   },
   async fileRaw(projectId: string, path: string): Promise<Blob> {
