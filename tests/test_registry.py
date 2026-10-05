@@ -191,3 +191,73 @@ def test_complete_default_branch_ref_grammar_is_rejected(tmp_path: Path, default
     git_repo(repo)
     with pytest.raises(RegistryError, match="INVALID_DEFAULT_BRANCH"):
         load_registry(write_config(tmp_path, [project(repo, default_branch=default_branch)]))
+
+
+def test_plans_mapping_defaults_to_project_category_and_project_id(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    git_repo(repo)
+
+    record = load_registry(write_config(tmp_path, [project(repo)])).get("demo")
+
+    assert record is not None
+    assert record.plans_category == "project"
+    assert record.plans_slug == "demo"
+
+
+def test_plans_mapping_accepts_explicit_thirdparty_category_and_slug(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    git_repo(repo)
+
+    record = load_registry(write_config(
+        tmp_path, [project(repo, plans_category="thirdparty", plans_slug="external-plugin")]
+    )).get("demo")
+
+    assert record is not None
+    assert record.plans_category == "thirdparty"
+    assert record.plans_slug == "external-plugin"
+
+
+@pytest.mark.parametrize("category", [None, "", "PROJECT", "client", 1])
+def test_invalid_plans_category_is_rejected(tmp_path: Path, category: object) -> None:
+    repo = tmp_path / "repo"
+    git_repo(repo)
+
+    with pytest.raises(RegistryError, match="INVALID_PLANS_CATEGORY"):
+        load_registry(write_config(tmp_path, [project(repo, plans_category=category)]))
+
+
+@pytest.mark.parametrize("slug", [None, "", "Upper", "../outside", "folder/name", "x" * 65])
+def test_invalid_plans_slug_is_rejected(tmp_path: Path, slug: object) -> None:
+    repo = tmp_path / "repo"
+    git_repo(repo)
+
+    with pytest.raises(RegistryError, match="INVALID_PLANS_SLUG"):
+        load_registry(write_config(tmp_path, [project(repo, plans_slug=slug)]))
+
+
+def test_duplicate_plans_mapping_is_rejected_even_when_one_project_is_disabled(tmp_path: Path) -> None:
+    projects = [
+        project(tmp_path / "repo-one", project_id="one", plans_slug="shared-plans"),
+        project(tmp_path / "repo-two", project_id="two", enabled=False, plans_slug="shared-plans"),
+    ]
+
+    with pytest.raises(RegistryError, match="DUPLICATE_PLANS_MAPPING"):
+        load_registry(write_config(tmp_path, projects))
+
+
+def test_registry_epoch_advances_when_plans_mapping_changes(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    git_repo(repo)
+    config = write_config(tmp_path, [project(repo)])
+    first = load_registry(config)
+    same = load_registry(config)
+    assert same.epoch == first.epoch
+
+    config.write_text(json.dumps({
+        "version": 1,
+        "approvedRoots": [str(tmp_path)],
+        "projects": [project(repo, plans_category="thirdparty", plans_slug="shared")],
+    }))
+    changed = load_registry(config)
+
+    assert changed.epoch == first.epoch + 1

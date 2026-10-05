@@ -26,6 +26,8 @@ class ProjectRecord:
     enabled: bool
     remote: str
     default_branch: str
+    plans_category: str = "project"
+    plans_slug: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,7 +49,8 @@ def _identity(registry: Registry) -> tuple[object, ...]:
     return (
         tuple(str(root) for root in registry.approved_roots),
         tuple((item.project_id, item.name, str(item.path.expanduser().resolve(strict=False)), item.enabled,
-               item.remote, item.default_branch) for item in registry.projects),
+               item.remote, item.default_branch, item.plans_category, item.plans_slug)
+              for item in registry.projects),
     )
 
 
@@ -101,6 +104,7 @@ def load_registry(config_path: Path) -> Registry:
         roots.append(root)
     projects: list[ProjectRecord] = []
     seen: set[str] = set()
+    seen_plans_mappings: set[tuple[str, str]] = set()
     for item in projects_raw:
         if not isinstance(item, dict):
             raise RegistryError("INVALID_PROJECT")
@@ -125,6 +129,16 @@ def load_registry(config_path: Path) -> Registry:
             raise RegistryError("INVALID_REMOTE_ALIAS")
         if not is_valid_ref_name(default_branch):
             raise RegistryError("INVALID_DEFAULT_BRANCH")
+        plans_category = item.get("plans_category", "project")
+        if not isinstance(plans_category, str) or plans_category not in {"project", "thirdparty"}:
+            raise RegistryError("INVALID_PLANS_CATEGORY")
+        plans_slug = item.get("plans_slug", project_id)
+        if not isinstance(plans_slug, str) or not PROJECT_ID_RE.fullmatch(plans_slug):
+            raise RegistryError("INVALID_PLANS_SLUG")
+        plans_mapping = (plans_category, plans_slug)
+        if plans_mapping in seen_plans_mappings:
+            raise RegistryError("DUPLICATE_PLANS_MAPPING")
+        seen_plans_mappings.add(plans_mapping)
         projects.append(ProjectRecord(
             project_id=project_id,
             name=_required_string(item.get("name"), "name"),
@@ -132,5 +146,7 @@ def load_registry(config_path: Path) -> Registry:
             enabled=enabled,
             remote=remote,
             default_branch=default_branch,
+            plans_category=plans_category,
+            plans_slug=plans_slug,
         ))
     return _with_process_epoch(config_path, Registry(tuple(roots), tuple(projects)))
