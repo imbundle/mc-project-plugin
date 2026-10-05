@@ -32,10 +32,32 @@ export default function MCProjectsRoute() {
   const controller = React.useRef(createRouteController(projectsApi)).current
   const route = React.useSyncExternalStore(controller.subscribe, controller.getState, controller.getState)
   const [branchValue, setBranchValue] = React.useState('')
+  const refreshInFlight = React.useRef(false)
+  const runRefresh = React.useCallback(() => {
+    if (refreshInFlight.current) return
+    refreshInFlight.current = true
+    void controller
+      .refresh()
+      .catch(() => undefined)
+      .finally(() => {
+        refreshInFlight.current = false
+      })
+  }, [controller])
   React.useEffect(() => {
     void controller.mount()
     return () => controller.unmount()
   }, [controller])
+  React.useEffect(() => {
+    if (route.mode !== 'git') return
+    let active = true
+    const timer = window.setInterval(() => {
+      if (active) runRefresh()
+    }, 60_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [route.mode, runRefresh])
   const {
     catalog,
     activeId,
@@ -132,7 +154,13 @@ export default function MCProjectsRoute() {
               />
             </aside>
             <div id="mc-project-context-column" className="min-h-0 min-w-0 overflow-hidden md:h-full">
-              <CodeViewer projectId={active.project_id} path={codePath} file={codeFile} loading={codeLoading} error={codeError} />
+              <CodeViewer
+                projectId={active.project_id}
+                path={codePath}
+                file={codeFile}
+                loading={codeLoading}
+                error={codeError}
+              />
             </div>
           </>
         ) : mode === 'plans' ? (
@@ -200,7 +228,7 @@ export default function MCProjectsRoute() {
                 selectedCommitHash={selectedCommitHash}
                 onSelectCommit={(hash) => void controller.selectCommit(hash)}
                 lastUpdated={snapshot.observedAt}
-                onRefresh={() => void controller.refresh()}
+                onRefresh={runRefresh}
               />
             </div>
           </>
