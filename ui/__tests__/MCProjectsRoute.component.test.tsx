@@ -249,6 +249,82 @@ test('renders only populated GitHub blocks and the item-row card contract', { co
   }
 })
 
+test(
+  'selecting an untracked Git tree item renders its diff and replaces the prior file context',
+  { concurrency: false },
+  async () => {
+    const snapshot = structuredClone(fixture.data)
+    const untrackedDiff =
+      'diff --git a/new.txt b/new.txt\nnew file mode 100644\nindex 0000000..3e75765\n--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+untracked contents\n'
+    snapshot.workingTree.files.push({ path: 'new.txt', status: '??' })
+    snapshot.capabilities.workingTree.value.files.push({ path: 'new.txt', status: '??' })
+    snapshot.fileDiffs['new.txt'] = untrackedDiff
+    const { host, root } = await mountedRoute(snapshot)
+    try {
+      const untrackedFile = host.querySelector<HTMLElement>('[data-tree-path="new.txt"]')
+      assert.ok(untrackedFile, 'untracked working-tree file is selectable')
+      assert.equal(untrackedFile.getAttribute('aria-selected'), 'false')
+      await click(host, '[data-tree-path="new.txt"]')
+      assert.equal(host.querySelector('[data-tree-path="new.txt"]')?.getAttribute('aria-selected'), 'true')
+      assert.match(text(host.querySelector('[data-testid="context-diff"]') ?? host), /untracked contents/)
+      assert.doesNotMatch(text(host.querySelector('[data-testid="context-diff"]') ?? host), /oldValue = true/)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)
+
+test(
+  'shows an explicit empty-file state for an untracked zero-byte file',
+  { concurrency: false },
+  async () => {
+    installDom()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const snapshot = structuredClone(fixture.data)
+    snapshot.fileDiffs['empty.txt'] =
+      'diff --git a/empty.txt b/empty.txt\nnew file mode 100644\nindex 0000000..e69de29\n'
+    const root = createRoot(host)
+    await act(async () => {
+      root.render(React.createElement(ContextPanel, { focus: { kind: 'file', value: 'empty.txt' }, snapshot }))
+      await sleep()
+    })
+    try {
+      assert.match(text(host.querySelector('[data-testid="context-diff"]') ?? host), /empty file/i)
+      assert.equal(host.querySelector('[data-testid="context-file-unavailable"]'), null)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)
+
+
+test(
+  'shows an explicit status when the selected file has no available diff preview',
+  { concurrency: false },
+  async () => {
+    installDom()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const snapshot = structuredClone(fixture.data)
+    delete snapshot.fileDiffs['src/app.ts']
+    const root = createRoot(host)
+    await act(async () => {
+      root.render(React.createElement(ContextPanel, { focus: { kind: 'file', value: 'src/app.ts' }, snapshot }))
+      await sleep()
+    })
+    try {
+      assert.match(
+        host.querySelector('[data-testid="context-file-unavailable"]')?.textContent ?? '',
+        /No diff preview is available/,
+      )
+      assert.equal(host.querySelector('[data-testid="context-diff"]'), null)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)
+
 test('renders a parsed unified diff without losing whitespace or adding widgets', { concurrency: false }, async () => {
   const window = installDom()
   const host = document.createElement('div')
