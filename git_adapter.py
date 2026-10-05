@@ -295,9 +295,15 @@ class GitAdapter:
                 "author": header[2] if len(header) > 2 else "", "date": header[3] if len(header) > 3 else "",
                 "files": files[:500], "diff": diff}
 
-    def file_diff(self, file_path: str) -> str:
+    def file_diff(self, file_path: str, *, untracked: bool = False) -> str:
         safe = _path(file_path)
-        diff = self._run("diff", ["diff", "--no-ext-diff", "--no-renames", "HEAD", "--", safe])
+        if untracked:
+            diff = self._run(
+                "diff-untracked",
+                ["diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-renames", "--", "/dev/null", safe],
+            )
+        else:
+            diff = self._run("diff", ["diff", "--no-ext-diff", "--no-renames", "HEAD", "--", safe])
         if len(diff.encode("utf-8")) > 1024 * 1024:
             raise GitAdapterError("OUTPUT_LIMIT")
         return diff

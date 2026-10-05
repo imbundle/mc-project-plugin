@@ -20,9 +20,9 @@ class GitRunnerError(RuntimeError):
 
 
 class GitRunner:
-    ALLOWED_OPERATIONS = {"status", "branches", "remote-branches", "remote", "rev-parse", "log", "show", "show-diff", "diff", "fingerprint-head", "fingerprint-status", "fingerprint-remotes", "fingerprint-branches", "fingerprint-current-branch"}
+    ALLOWED_OPERATIONS = {"status", "branches", "remote-branches", "remote", "rev-parse", "log", "show", "show-diff", "diff", "diff-untracked", "fingerprint-head", "fingerprint-status", "fingerprint-remotes", "fingerprint-branches", "fingerprint-current-branch"}
     ALLOWED_COMMANDS = {"status": "status", "branches": "for-each-ref", "remote-branches": "for-each-ref",
-                       "remote": "remote", "rev-parse": "rev-parse", "log": "log", "show": "show", "show-diff": "show", "diff": "diff",
+                       "remote": "remote", "rev-parse": "rev-parse", "log": "log", "show": "show", "show-diff": "show", "diff": "diff", "diff-untracked": "diff",
                        "fingerprint-head": "rev-parse", "fingerprint-status": "status", "fingerprint-remotes": "for-each-ref",
                        "fingerprint-branches": "for-each-ref", "fingerprint-current-branch": "symbolic-ref"}
     FORBIDDEN_ARGS = {"--git-dir", "--work-tree", "--exec-path", "--upload-pack", "--receive-pack", "-c"}
@@ -52,6 +52,11 @@ class GitRunner:
             return len(args) == 4 and args[1:3] == ["--no-ext-diff", "--format="] and bool(re.fullmatch(r"[0-9a-fA-F]{7,64}", args[3]))
         if operation == "diff":
             return len(args) == 6 and args[1:5] == ["--no-ext-diff", "--no-renames", "HEAD", "--"] and bool(args[5]) and not args[5].startswith("/") and ".." not in args[5] and not any(char in args[5] for char in "\x00\n\r*?[]:")
+        if operation == "diff-untracked":
+            path = args[7] if len(args) == 8 else ""
+            return (len(args) == 8 and args[1:7] == ["--no-index", "--no-ext-diff", "--no-textconv", "--no-renames", "--", "/dev/null"]
+                    and bool(path) and not path.startswith("/") and ".." not in path.split("/")
+                    and not any(ord(char) < 32 for char in path) and not any(char in path for char in "*?[]:"))
         if operation == "fingerprint-head":
             return args[1:] == ["HEAD"]
         if operation == "fingerprint-status":
@@ -142,7 +147,14 @@ class GitRunner:
                 self._stop(process, pgid)
                 raise GitRunnerError("GIT_TIMEOUT", operation) from exc
             if returncode != 0:
-                raise GitRunnerError("GIT_COMMAND_FAILED", operation)
+                expected_untracked_diff = (
+                    operation == "diff-untracked"
+                    and returncode == 1
+                    and not output["stderr"]
+                    and bytes(output["stdout"]).startswith(b"diff --git ")
+                )
+                if not expected_untracked_diff:
+                    raise GitRunnerError("GIT_COMMAND_FAILED", operation)
             try:
                 return output["stdout"].decode("utf-8")
             except UnicodeDecodeError as exc:

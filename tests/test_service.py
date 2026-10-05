@@ -1,11 +1,12 @@
 from pathlib import Path
+import subprocess
 import threading
 import pytest
 
 from registry import ProjectRecord, Registry
 from repository_context import RepositoryContext
 from service import ProjectService, ServiceError
-from git_adapter import GitAdapterError
+from git_adapter import GitAdapter, GitAdapterError
 from github_adapter import GitHubAdapterError
 
 
@@ -13,7 +14,7 @@ class FakeGit:
     def working_tree(self): return {"files": [{"path": "README.md", "status": "M"}]}
     def branches(self): return {"local": [{"name": "main", "current": True}], "remote": [], "remoteAlias": "origin", "repository": "https://github.com/example/repo.git"}
     def commits(self, ref): return [{"hash": "a" * 40, "shortHash": "a" * 7, "subject": "Initial", "author": "Test", "date": "2026-09-14T10:00:00+00:00", "merge": False}]
-    def file_diff(self, path): return "diff --git a/README.md b/README.md\n+change"
+    def file_diff(self, path: str, *, untracked: bool = False) -> str: return "diff --git a/README.md b/README.md\n+change"
 
 
 class FakeGithub:
@@ -39,6 +40,47 @@ def test_snapshot_contains_local_and_github_capabilities(tmp_path: Path) -> None
     assert snapshot["fileDiffs"]["README.md"].startswith("diff --git")
     assert snapshot["branchLogs"]["main"][0]["hash"] == "a" * 40
 
+def test_snapshot_includes_a_diff_for_untracked_working_tree_files(tmp_path: Path) -> None:
+    class UntrackedFile(FakeGit):
+        def working_tree(self): return {"files": [{"path": "new.txt", "status": "??"}]}
+        def file_diff(self, path: str, *, untracked: bool = False) -> str:
+            return "diff --git a/new.txt b/new.txt\nnew file mode 100644\n@@ -0,0 +1 @@\n+new\n" if untracked else ""
+
+    record = ProjectRecord("demo", "Demo", tmp_path, True, "origin", "main")
+    service = ProjectService(Registry((tmp_path,), (record,)), lambda _ctx: UntrackedFile(), lambda _ctx: FakeGithub())
+    snapshot = service.snapshot(context(tmp_path))
+
+    assert snapshot["workingTree"] == {"files": [{"path": "new.txt", "status": "??"}]}
+    assert snapshot["fileDiffs"] == {
+        "new.txt": "diff --git a/new.txt b/new.txt\nnew file mode 100644\n@@ -0,0 +1 @@\n+new\n"
+    }
+
+
+def test_real_repository_snapshot_contains_untracked_file_diff(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args: str) -> str:
+        result = subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
+        return result.stdout
+
+    git("init", "-b", "main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (repo / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    git("add", "tracked.txt")
+    git("commit", "-m", "initial")
+    git("remote", "add", "origin", "https://github.com/example/repo.git")
+    (repo / "new.txt").write_text("untracked snapshot content\n", encoding="utf-8")
+
+    repo_context = RepositoryContext("demo", "Demo", repo, "origin", "main", "https://github.com/example/repo.git")
+    record = ProjectRecord("demo", "Demo", repo, True, "origin", "main")
+    service = ProjectService(Registry((tmp_path,), (record,)), lambda ctx: GitAdapter(ctx), lambda _ctx: FakeGithub())
+
+    snapshot: dict = service.snapshot(repo_context)
+
+    assert {"path": "new.txt", "status": "??"} in snapshot["workingTree"]["files"]
+    assert "+untracked snapshot content" in snapshot["fileDiffs"]["new.txt"]
 
 
 
@@ -107,7 +149,7 @@ def test_file_diff_collection_stops_at_aggregate_budget(tmp_path: Path) -> None:
     class ManyDiffs(FakeGit):
         def __init__(self): self.calls = 0
         def working_tree(self): return {"files": [{"path": f"file-{index}.txt", "status": "M"} for index in range(30)]}
-        def file_diff(self, path):
+        def file_diff(self, path: str, *, untracked: bool = False) -> str:
             self.calls += 1
             return "x" * (1024 * 1024)
 
@@ -137,7 +179,7 @@ def test_branch_log_collection_stops_at_aggregate_budget(tmp_path: Path) -> None
 
 def test_single_file_diff_byte_limit_emits_output_warning(tmp_path: Path) -> None:
     class HugeDiff(FakeGit):
-        def file_diff(self, path):
+        def file_diff(self, path: str, *, untracked: bool = False) -> str:
             return "x" * (1024 * 1024 + 1)
 
     record = ProjectRecord("demo", "Demo", tmp_path, True, "origin", "main")

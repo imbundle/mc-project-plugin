@@ -378,7 +378,7 @@ class ProjectService:
                 if not isinstance(path, str):
                     continue
                 try:
-                    diff = git.file_diff(path)
+                    diff = git.file_diff(path, untracked=entry.get("status") == "??")
                     if isinstance(diff, str):
                         diff_bytes = len(diff.encode("utf-8"))
                         if diff_bytes > MAX_FILE_DIFF_BYTES:

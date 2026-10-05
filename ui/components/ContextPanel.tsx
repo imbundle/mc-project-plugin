@@ -628,8 +628,13 @@ export function ContextPanel({
       <div data-testid="context-body" className="bg-surface flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {isCommit || branchCommitDetail ? (
           <CommitDetailView detail={detail} loading={loading} />
-        ) : isFile && typeof contextual === 'string' ? (
+        ) : isFile && typeof contextual === 'string' && contextual.length > 0 ? (
           <DiffView diff={contextual} viewType={viewType} onViewTypeChange={setViewType} />
+        ) : isFile ? (
+          <div data-testid="context-file-unavailable" className="text-text-muted p-4 font-mono text-xs" role="status">
+            No diff preview is available for {focus.value}. The file may be missing, unreadable, or over the preview
+            limit.
+          </div>
         ) : isBranch ? (
           <div data-testid="context-branch-log" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {logUnavailable ? (

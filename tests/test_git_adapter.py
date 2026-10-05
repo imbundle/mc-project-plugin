@@ -173,6 +173,52 @@ def test_reads_file_diff_without_mutating_repository(tmp_path: Path) -> None:
     assert before == after
 
 
+def test_untracked_file_diff_contains_its_working_tree_content_without_staging(tmp_path: Path) -> None:
+    context, repo = make_repo(tmp_path)
+    adapter = GitAdapter(context)
+
+    entry = next(item for item in adapter.working_tree()["files"] if item["path"] == "new.txt")
+    assert entry["status"] == "??"
+    before = subprocess.check_output(["git", "-C", repo, "status", "--porcelain"], text=True)
+    diff = adapter.file_diff("new.txt", untracked=True)
+    after = subprocess.check_output(["git", "-C", repo, "status", "--porcelain"], text=True)
+
+    assert "+new" in diff
+    assert before == after
+
+
+def test_untracked_binary_file_diff_is_explicit_and_does_not_emit_content(tmp_path: Path) -> None:
+    context, repo = make_repo(tmp_path)
+    marker = b"PRIVATE_BINARY_MARKER"
+    (Path(repo) / "image.bin").write_bytes(b"\x00" + marker)
+
+    diff = GitAdapter(context).file_diff("image.bin", untracked=True)
+
+    assert "Binary files" in diff
+    assert marker.decode() not in diff
+
+
+def test_untracked_symlink_diff_does_not_read_target_outside_repository(tmp_path: Path) -> None:
+    context, repo = make_repo(tmp_path)
+    outside = tmp_path / "outside.txt"
+    marker = "PRIVATE_OUTSIDE_MARKER"
+    outside.write_text(marker, encoding="utf-8")
+    (Path(repo) / "link.txt").symlink_to(outside)
+
+    diff = GitAdapter(context).file_diff("link.txt", untracked=True)
+
+    assert "link.txt" in diff
+    assert marker not in diff
+
+
+def test_runner_allows_only_narrow_untracked_diff_arguments() -> None:
+    accepted = ["diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-renames", "--", "/dev/null", "new.txt"]
+    unsafe = ["diff", "--no-index", "--ext-diff", "--no-textconv", "--no-renames", "--", "/dev/null", "new.txt"]
+
+    assert GitRunner._args_allowed("diff-untracked", accepted)
+    assert not GitRunner._args_allowed("diff-untracked", unsafe)
+
+
 def test_runner_rejects_mutating_operation(tmp_path: Path) -> None:
     with pytest.raises(GitRunnerError, match="reset"):
         GitRunner(tmp_path).run("reset", ["reset", "--hard"])
