@@ -1331,6 +1331,115 @@ test('#45 Plans mode loads and renders Markdown safely; folder states remain dis
   }
 })
 
+test('#48 refresh polling runs only in the active Git view and cleans up on mode changes', { concurrency: false }, async () => {
+  const { host, root, window, requestLog } = await mountedRoute()
+  const cleared: number[] = []
+  const originalSetInterval = window.setInterval.bind(window)
+  const originalClearInterval = window.clearInterval.bind(window)
+  let callback: (() => void) | undefined
+  let intervalMs: number | undefined
+  let scheduleCount = 0
+  window.setInterval = ((handler: TimerHandler, timeout?: number) => {
+    scheduleCount += 1
+    callback = handler as () => void
+    intervalMs = timeout
+    return 71
+  }) as typeof window.setInterval
+  window.clearInterval = ((id: number) => {
+    cleared.push(id)
+    return originalClearInterval(id)
+  }) as typeof window.clearInterval
+  try {
+    // Re-enter Git after installing timer spies to exercise activation deterministically.
+    await click(host, '[data-mode="code"]')
+    await click(host, '[data-mode="git"]')
+    assert.equal(intervalMs, 60_000)
+    assert.equal(callback !== undefined, true)
+    const snapshotReads = () => requestLog.filter((url) => url.includes('/snapshot?')).length
+    const before = snapshotReads()
+    await act(async () => {
+      callback?.()
+      await sleep(20)
+    })
+    assert.equal(snapshotReads(), before + 1)
+    await act(async () => {
+      callback?.()
+      await sleep(20)
+    })
+    assert.equal(snapshotReads(), before + 2, 'a later poll retries after a failed refresh')
+    await click(host, '[data-mode="code"]')
+    assert.equal(cleared.at(-1), 71)
+    const stoppedAt = snapshotReads()
+    await act(async () => {
+      callback?.()
+      await sleep(20)
+    })
+    assert.equal(snapshotReads(), stoppedAt, 'deactivated interval callback cannot refresh')
+    await click(host, '[data-mode="git"]')
+    assert.equal(intervalMs, 60_000)
+    assert.equal(scheduleCount, 2, 'reactivation installs exactly one new schedule')
+  } finally {
+    await act(async () => root.unmount())
+    assert.equal(cleared.at(-1), 71, 'unmount clears the active polling timer')
+    window.setInterval = originalSetInterval
+    window.clearInterval = originalClearInterval
+    window.happyDOM.abort()
+  }
+})
+
+test('#48 a manual refresh suppresses a poll while its request is in flight', { concurrency: false }, async () => {
+  const { host, root, window } = await mountedRoute()
+  const originalFetch = globalThis.fetch
+  const releases: Array<(response: Response) => void> = []
+  let pollCallback: (() => void) | undefined
+  let snapshotRequests = 0
+  window.setInterval = ((handler: TimerHandler) => {
+    pollCallback = handler as () => void
+    return 82
+  }) as typeof window.setInterval
+  try {
+    await click(host, '[data-mode="code"]')
+    await click(host, '[data-mode="git"]')
+    const poll = pollCallback
+    assert.equal(typeof poll, 'function')
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/snapshot?')) {
+        snapshotRequests += 1
+        return new Promise<Response>((resolve) => {
+          releases.push(resolve)
+        })
+      }
+      return originalFetch(input, init)
+    }) as typeof globalThis.fetch
+    await click(host, '[data-testid="route-refresh"]')
+    assert.equal(snapshotRequests, 1)
+    await act(async () => {
+      poll?.()
+      await sleep(20)
+    })
+    assert.equal(snapshotRequests, 1, 'poll must not overlap an active manual refresh')
+    await act(async () => {
+      releases[0](response(fixture.data))
+      await sleep(20)
+    })
+    await act(async () => {
+      poll?.()
+      await sleep(20)
+    })
+    assert.equal(snapshotRequests, 2, 'a later poll runs after the manual refresh completes')
+    await click(host, '[data-testid="route-refresh"]')
+    assert.equal(snapshotRequests, 2, 'manual action does not overlap an active automatic refresh')
+    await act(async () => {
+      releases[1](response(fixture.data))
+      await sleep(20)
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+    await act(async () => root.unmount())
+    window.happyDOM.abort()
+  }
+})
+
 test('#41 code mode renders Markdown directly and resets on mode change', { concurrency: false }, async () => {
   const { host, root } = await mountedRoute()
   try {
