@@ -73,6 +73,7 @@ test('Plans validators accept only safe Markdown tree entries and complete bound
     truncated: false,
   }
   assert.equal(validPlansTree(tree), true)
+  assert.equal(validPlansTree({ ...tree, path: '.' }), true)
   assert.equal(validPlansTree({ ...tree, entries: [...tree.entries, { name: '.hidden.md', path: '.hidden.md', type: 'file' }] }), false)
   assert.equal(validPlansTree({ ...tree, entries: [{ name: 'notes.txt', path: 'notes.txt', type: 'file' }] }), false)
   assert.equal(validPlansTree({ ...tree, entries: [{ name: 'private', path: '.private', type: 'dir' }] }), false)

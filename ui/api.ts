@@ -827,7 +827,7 @@ export const validTree = (value: unknown): value is TreeResponse =>
 const plansPath = (value: unknown, allowEmpty = false): value is string =>
   typeof value === 'string' &&
   value.length <= 1024 &&
-  (value === '' ? allowEmpty : value.split('/').length <= 32 && relativePath(value) &&
+  ((value === '' || value === '.') ? allowEmpty : value.split('/').length <= 32 && relativePath(value) &&
     value.split('/').every((segment) => segment.length > 0 && !segment.startsWith('.') && !segment.includes('\\') && !/[\x00-\x1f]/.test(segment)))
 const markdownPath = (value: unknown): value is string =>
   plansPath(value) && /\.(?:md|markdown)$/i.test(value)
